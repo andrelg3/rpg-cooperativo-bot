@@ -5,16 +5,34 @@ import gspread
 from google.oauth2.service_account import Credentials
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from flask import Flask
+from threading import Thread
+
+# ==========================================
+# 0. SERVIDOR WEB FICTÍCIO PARA O RENDER
+# ==========================================
+# Isso serve apenas para abrir a porta que o Render exige no plano grátis!
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Bot de RPG está ativo e rodando!"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
+
+# Inicia o servidor web em uma thread separada para não travar o bot do Telegram
+Thread(target=run_flask).start()
 
 # ==========================================
 # 1. CONFIGURAÇÕES INICIAIS & APIs
 # ==========================================
-TOKEN_TELEGRAM = os.environ.get("TELEGRAM_TOKEN") # Defina isso no Render também!
-NOME_PLANILHA = "rpg-pedagogico-perguntas" # Nome exato da sua planilha do Google
+TOKEN_TELEGRAM = os.environ.get("TELEGRAM_TOKEN")
+NOME_PLANILHA = "rpg-pedagogico-perguntas"
 
 bot = telebot.TeleBot(TOKEN_TELEGRAM)
 
-# Autenticação no Google Sheets usando a variável de ambiente
 try:
     creds_dict = json.loads(os.environ.get("GOOGLE_CREDENTIALS"))
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -28,11 +46,9 @@ except Exception as e:
 # ==========================================
 # 2. BANCO DE DADOS EM MEMÓRIA (LOBBY/PARTIDA)
 # ==========================================
-# Em um ambiente de produção real usaríamos um banco de dados,
-# mas para o nosso teste com 3 pessoas, guardar em memória funciona perfeitamente!
 partida = {
-    "estado": "IDLE",            # IDLE, LOBBY, EM_BATALHA
-    "jogadores": {},             # {user_id: {"nome": nome, "respondeu": False, "escolha": None}}
+    "estado": "IDLE",            
+    "jogadores": {},             
     "pergunta_atual": 0,
     "hp_monstro": 50,
     "hp_grupo": 3,
@@ -43,10 +59,8 @@ partida = {
 # 3. FUNÇÕES AUXILIARES
 # ==========================================
 def carregar_perguntas():
-    """Busca as perguntas cadastradas no Google Sheets"""
     try:
         dados = sheet.get_all_records()
-        # Embaralha as perguntas para dinâmica de jogo
         random.shuffle(dados)
         return dados
     except Exception as e:
@@ -108,7 +122,6 @@ def processar_cliques(call):
     user_id = str(call.from_user.id)
     nome_usuario = call.from_user.first_name
 
-    # --- AÇÃO: ENTRAR NO LOBBY ---
     if call.data == "lobby_entrar":
         if partida["estado"] != "LOBBY":
             bot.answer_callback_query(call.id, "O lobby já foi fechado!")
@@ -122,14 +135,12 @@ def processar_cliques(call):
             bot.answer_callback_query(call.id, "Desculpe, o lobby de teste está lotado! (Máx: 3)")
             return
 
-        # Adiciona jogador
         partida["jogadores"][user_id] = {
             "nome": nome_usuario,
             "respondeu": False,
             "escolha": None
         }
         
-        # Atualiza a mensagem do Lobby
         lista_nomes = "\n".join([f"👤 {p['nome']}" for p in partida["jogadores"].values()])
         texto_atualizado = (
             "🏰 **NOVA MASMORRA PEDAGÓGICA ABERTA!**\n"
@@ -143,7 +154,6 @@ def processar_cliques(call):
                               parse_mode="Markdown", reply_markup=criar_teclado_lobby())
         bot.answer_callback_query(call.id, "Você entrou na masmorra!")
 
-    # --- AÇÃO: INICIAR PARTIDA ---
     elif call.data == "lobby_iniciar":
         if partida["estado"] != "LOBBY":
             return
@@ -156,7 +166,6 @@ def processar_cliques(call):
         bot.answer_callback_query(call.id, "A batalha começou!")
         enviar_pergunta_rodada(call.message.chat.id)
 
-    # --- AÇÃO: VOTAR EM UMA ALTERNATIVA ---
     elif call.data.startswith("voto_"):
         if partida["estado"] != "EM_BATALHA":
             return
@@ -169,19 +178,17 @@ def processar_cliques(call):
             bot.answer_callback_query(call.id, "Você já deu o seu veredito nesta rodada!")
             return
             
-        voto = call.data.split("_")[1] # Pega 'A', 'B' ou 'C'
+        voto = call.data.split("_")[1]
         partida["jogadores"][user_id]["respondeu"] = True
         partida["jogadores"][user_id]["escolha"] = voto
         
         bot.answer_callback_query(call.id, f"Voto {voto} computado com sucesso!")
         
-        # Verifica se todos já responderam
         todos_responderam = all([p["respondeu"] for p in partida["jogadores"].values()])
         
         if todos_responderam:
             processar_fim_de_rodada(call.message.chat.id, call.message.message_id)
         else:
-            # Apenas atualiza a lista de quem já respondeu na tela
             atualizar_mensagem_batalha(call.message.chat.id, call.message.message_id)
 
 # ==========================================
@@ -191,7 +198,6 @@ def processar_cliques(call):
 def enviar_pergunta_rodada(chat_id):
     global partida
     
-    # Se acabarem as perguntas da planilha antes do monstro morrer
     if partida["pergunta_atual"] >= len(partida["perguntas_carregadas"]):
         bot.send_message(chat_id, "🌪️ As perguntas acabaram! O monstro fugiu e a partida empatou!")
         partida["estado"] = "IDLE"
@@ -199,7 +205,6 @@ def enviar_pergunta_rodada(chat_id):
 
     pergunta_foco = partida["perguntas_carregadas"][partida["pergunta_atual"]]
     
-    # Reseta o status de voto dos jogadores para a nova rodada
     for uid in partida["jogadores"]:
         partida["jogadores"][uid]["respondeu"] = False
         partida["jogadores"][uid]["escolha"] = None
@@ -219,8 +224,6 @@ def enviar_pergunta_rodada(chat_id):
     for p in partida["jogadores"].values():
         texto_pergunta += f"👤 {p['nome']}: ⏳ Aguardando...\n"
 
-    # Aqui você pode adicionar uma foto padrão de monstro ou usar um link da planilha
-    # Para o MVP simples, vamos enviar apenas o texto com os botões
     bot.send_message(chat_id, texto_pergunta, parse_mode="Markdown", reply_markup=criar_teclado_alternativas())
 
 def atualizar_mensagem_batalha(chat_id, message_id):
@@ -254,7 +257,6 @@ def processar_fim_de_rodada(chat_id, message_id):
     erros = 0
     detalhes_resultado = ""
 
-    # Processa as respostas
     for p in partida["jogadores"].values():
         if p["escolha"] == resposta_correta:
             acertos += 1
@@ -263,17 +265,14 @@ def processar_fim_de_rodada(chat_id, message_id):
             erros += 1
             detalhes_resultado += f"❌ *{p['nome']}* errou! (Sua resposta foi {p['escolha']})\n"
 
-    # Calcula alterações de HP
     dano_no_monstro = acertos * 10
-    dano_no_grupo = 1 if erros > 0 else 0 # Se alguém errar, o grupo toma 1 de dano global
+    dano_no_grupo = 1 if erros > 0 else 0
 
     partida["hp_monstro"] -= dano_no_monstro
     partida["hp_grupo"] -= dano_no_grupo
 
-    # Remove teclado da mensagem anterior para congelar a rodada
     bot.edit_message_reply_markup(chat_id, message_id, reply_markup=None)
 
-    # Exibe resultado da rodada
     texto_resultado = (
         f"📊 **RESULTADO DA RODADA {partida['pergunta_atual'] + 1}:**\n\n"
         f"{detalhes_resultado}\n"
@@ -285,7 +284,6 @@ def processar_fim_de_rodada(chat_id, message_id):
     
     bot.send_message(chat_id, texto_resultado, parse_mode="Markdown")
 
-    # --- VERIFICAÇÃO DE FIM DE JOGO ---
     if partida["hp_monstro"] <= 0:
         bot.send_message(chat_id, "🎉 **VITÓRIA!** Vocês desmascararam a fake news e derrotaram o monstro! O reino de Veridion está salvo graças aos Detetives da Informação! 🏆")
         partida["estado"] = "IDLE"
@@ -293,10 +291,8 @@ def processar_fim_de_rodada(chat_id, message_id):
         bot.send_message(chat_id, "💀 **DERROTA!** O grupo caiu sob a desinformação do monstro. Estudem mais as técnicas de checagem e tentem novamente usando `/jogar`!")
         partida["estado"] = "IDLE"
     else:
-        # Próxima Rodada
         partida["pergunta_atual"] += 1
-        bot.send_message(chat_id, "⏳ Próximo monstro se aproximando em 5 segundos...")
-        # Dá um tempinho para leitura e envia o próximo desafio
+        bot.send_message(chat_id, "⏳ Próximo desafio se aproximando em 5 segundos...")
         import time
         time.sleep(5)
         enviar_pergunta_rodada(chat_id)
