@@ -215,9 +215,9 @@ def enviar_pergunta_rodada(chat_id):
         "-------------------------------------\n"
         f"📜 **DESAFIO {partida['pergunta_atual'] + 1}:**\n"
         f"*{pergunta_foco['Pergunta']}*\n\n"
-        f"🅰️ {pergunta_foco['Alternativa_A']}\n"
-        f"🅱️ {pergunta_foco['Alternativa_B']}\n"
-        f"🆃 {pergunta_foco['Alternativa_C']}\n\n"
+        f"A) {pergunta_foco['Alternativa_A']}\n"
+        f"B) {pergunta_foco['Alternativa_B']}\n"
+        f"C) {pergunta_foco['Alternativa_C']}\n\n"
         "**Status das Respostas:**\n"
     )
     
