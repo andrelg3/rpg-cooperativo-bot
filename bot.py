@@ -298,6 +298,31 @@ def processar_fim_de_rodada(chat_id, message_id):
         enviar_pergunta_rodada(chat_id)
 
 # ==========================================
+# COMANDO EXTRA: RESETAR O JOGO
+# ==========================================
+@bot.message_handler(commands=['resetar', 'limpar'])
+def resetar_jogo(message):
+    global partida
+    
+    # Reseta todas as variáveis do jogo para o estado inicial
+    partida = {
+        "estado": "IDLE",            
+        "jogadores": {},             
+        "pergunta_atual": 0,
+        "hp_monstro": 50,
+        "hp_grupo": 3,
+        "perguntas_carregadas": []
+    }
+    
+    texto_reset = (
+        "🔄 **SISTEMA REINICIADO!**\n\n"
+        "A masmorra ativa foi limpa e todas as variáveis foram resetadas.\n"
+        "Você já pode iniciar um novo jogo digitando `/jogar`!"
+    )
+    
+    bot.send_message(message.chat.id, texto_reset, parse_mode="Markdown")
+
+# ==========================================
 # 7. INICIALIZAÇÃO
 # ==========================================
 if __name__ == "__main__":
